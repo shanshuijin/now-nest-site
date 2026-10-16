@@ -1,0 +1,15 @@
+# 这是一个"发布产物"仓库：只放能跑起来的东西，不做构建。
+# 生成方式见工作仓库的 _work/sync-site.mjs
+
+# 系统 / 编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+*.tmp
+.idea/
+.vscode/
+
+# 备份（工作仓库里 2026-10 踩过：.gitignore 存成 UTF-16LE 导致 *.bak 实际没生效）
+*.bak
+*.bak-*

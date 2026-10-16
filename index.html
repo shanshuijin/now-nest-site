@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#f88f50">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="pwa-icon-192.png">
+<title>今栖 NowNest</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ App Shell ============ -->
+<div id="app">
+  <!-- Chat View -->
+  <div class="chat-view" id="chatView">
+    <div class="chat-titles" id="chatTitles">
+      <div class="ct-main">日向翔阳</div>
+      <div class="ct-sub"><span class="ct-star">★</span> 与小鱼的小窝 <span class="ct-star">★</span></div>
+      <div class="ct-period-reminder" id="ctPeriodReminder"></div>
+    </div>
+    <div class="chat-header">
+      <div class="header-right">
+        <button class="btn-review" id="btnReview" title="锐评">
+          <div class="glow"></div>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </button>
+        <button class="btn-search" id="btnSearch" title="搜索">
+          <div class="glow"></div>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
+        </button>
+        <div class="btn-menu-wrap">
+          <button class="btn-menu" id="btnMenu" title="菜单">
+            <div class="glow"></div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+          </button>
+          <span class="dot dot-v1" id="menuBtnDot" style="display:none"></span>
+        </div>
+      </div>
+    </div>
+    <div class="messages-area" id="messagesArea">
+      <div class="msg-empty">开始对话吧</div>
+    </div>
+    <div class="chat-input">
+      <div class="glow-orb-a"></div>
+      <div class="glow-orb-b"></div>
+      <textarea id="msgInput" rows="1" placeholder="输入消息…" maxlength="500"></textarea>
+      <button class="btn-send btn-photo" id="btnPhoto" title="发送图片">
+        <div class="glow"></div>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="15" rx="3"/><circle cx="12" cy="13" r="3"/><path d="M21 8l-4 3.5L13 8"/></svg>
+      </button>
+      <button class="btn-send btn-sticker" id="btnSticker" title="表情包">
+        <div class="glow"></div>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2.5 4 2.5 4-2.5 4-2.5"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button class="btn-send" id="btnSend" title="发送">
+        <div class="glow"></div>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4L22 2z"/></svg>
+      </button>
+    </div>
+    <input type="file" id="chatFileInput" accept="image/*" style="display:none">
+    <input type="file" id="stickerFileInput" accept="image/*" multiple style="display:none">
+  </div>
+
+  <!-- Menu Overlay (for side panel) -->
+  <div class="menu-overlay" id="menuOverlay"></div>
+
+  <!-- Side Panel (right slide-in menu) -->
+  <div class="side-panel" id="sidePanel">
+    <div class="sp-header">
+      <span class="sp-title">✦ 功能区</span>
+      <button class="btn-sp-close" id="btnSpClose" title="关闭">✕</button>
+    </div>
+    <div class="sp-divider"></div>
+    <div class="sp-menu" id="spMenu">
+      <button class="menu-btn" data-view="cards">
+        <span class="menu-icon">🏐</span> 字卡库管理 <span class="menu-arrow">›</span>
+      </button>
+      <button class="menu-btn" data-view="settings">
+        <span class="menu-icon">⚙️</span> 梦角设置 <span class="menu-arrow">›</span>
+      </button>
+      <button class="menu-btn" data-view="moments">
+        <span class="menu-icon">🫂</span> 朋友圈 <span class="menu-arrow">›</span>
+        <span class="menu-dot-anchor"><span class="dot dot-v1" data-dot-view="moments" style="display:none"></span></span>
+      </button>
+      <button class="menu-btn" data-view="diary">
+        <span class="menu-icon">📔</span> 日记 <span class="menu-arrow">›</span>
+        <span class="menu-dot-anchor"><span class="dot dot-v1" data-dot-view="diary" style="display:none"></span></span>
+      </button>
+      <button class="menu-btn" data-view="letters">
+        <span class="menu-icon">✉️</span> 写信 <span class="menu-arrow">›</span>
+        <span class="menu-dot-anchor"><span class="dot dot-v1" data-dot-view="letters" style="display:none"></span></span>
+      </button>
+      <button class="menu-btn" data-view="checkin">
+        <span class="menu-icon">📌</span> 打卡 <span class="menu-arrow">›</span>
+        <span class="menu-dot-anchor"><span class="dot dot-v1" data-dot-view="checkin" style="display:none"></span></span>
+      </button>
+      <button class="menu-btn" data-view="period">
+        <span class="menu-icon">📅</span> 经期记录 <span class="menu-arrow">›</span>
+      </button>
+      <button class="menu-btn" data-view="favorites">
+        <span class="menu-icon">⭐</span> 收藏夹 <span class="menu-arrow">›</span>
+        <span class="menu-dot-anchor"><span class="dot dot-v1" data-dot-view="favorites" style="display:none"></span></span>
+      </button>
+      <button class="menu-btn" data-view="memory">
+        <span class="menu-icon">🧠</span> 记忆库 <span class="menu-arrow">›</span>
+      </button>
+      <button class="menu-btn" data-view="shadows">
+        <span class="menu-icon">🕯️</span> 碎影 <span class="menu-arrow">›</span>
+        <span class="menu-dot-anchor"><span class="dot dot-v1" data-dot-view="shadows" style="display:none"></span></span>
+      </button>
+      <button class="menu-btn" data-view="links">
+        <span class="menu-icon"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5l5-5"/><path d="M11.2 6.8l1.5-1.5a4.1 4.1 0 0 1 5.8 5.8l-1.5 1.5"/><path d="M12.8 17.2l-1.5 1.5a4.1 4.1 0 0 1-5.8-5.8l1.5-1.5"/></svg></span> 连结簿 <span class="menu-arrow">›</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Fullscreen Management View (outside #app, highest z-index) -->
+<div class="fullscreen-view" id="fullscreenView">
+  <div class="fs-header">
+    <button class="btn-back-chat" id="btnBackToChat">← 返回聊天</button>
+    <span class="fs-title" id="fsTitle"></span>
+  </div>
+  <div class="fs-body" id="fsBody"></div>
+</div>
+
+<!-- Sticker Overlay -->
+<div class="sticker-overlay" id="stickerOverlay"></div>
+
+<!-- Sticker Panel (bottom slide-up) -->
+<div class="sticker-panel" id="stickerPanel">
+  <div class="sticker-panel-handle"></div>
+  <div class="sticker-toolbar">
+    <button class="btn-add-sticker" id="btnAddSticker">＋ 添加表情</button>
+    <span class="sticker-hint">点击发送 · 悬停显示删除</span>
+  </div>
+  <div class="sticker-grid-area" id="stickerGridArea">
+    <div class="sticker-grid" id="stickerGrid"></div>
+  </div>
+</div>
+
+<!-- Message Toast (top notification when away from chat) -->
+<div class="msg-toast" id="msgToast" onclick="returnToChat()"></div>
+
+<!-- 消息操作浮层（解读/收藏） -->
+<div class="msg-action-bar" id="msgActionBar">
+  <button class="mab-btn mab-interpret" type="button">🔍 解读</button>
+  <span class="mab-sep"></span>
+  <button class="mab-btn mab-fav" type="button">⭐ 收藏</button>
+  <span class="mab-sep"></span>
+  <button class="mab-btn mab-del" type="button">🗑️ 删除</button>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box" id="modalBox"></div>
+</div>
+
+<!-- Search Modal -->
+<div class="search-modal" id="searchModal">
+  <div class="sm-panel">
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="搜索聊天记录…" maxlength="50">
+      <button class="btn-search-close" id="btnSearchClose" title="关闭">✕</button>
+    </div>
+    <div class="search-results" id="searchResults">
+      <div class="search-empty">输入关键词搜索聊天记录</div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileImport" accept=".json" style="display:none">
+
+<script src="letters.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
