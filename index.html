@@ -10,6 +10,50 @@
 <link rel="apple-touch-icon" href="pwa-icon-192.png">
 <title>今栖 NowNest</title>
   <link rel="stylesheet" href="style.css">
+  <script>
+  /* 首帧防闪（FOUC）：在 <body> 解析前把「读配置 → 写 CSS 变量」同步跑完，
+     这样刷新时不会先露出厂橙绿光晕、也不会白底跳一下再出你的壁纸。
+     规则必须与 app.js 的 haloCfg()/bubbleCfg()/c2Of() 逐字一致 —— 这里只是提前执行同一套判断。
+     名字（.ct-main/.ct-sub）不在这里填：静态留空 + :empty 收起，交给 app.js 的 renderHeader()。 */
+  (function () {
+    var cfg = {};
+    try { cfg = JSON.parse(localStorage.getItem('mcard_config') || '{}') || {}; } catch (e) { return; }
+    var HEX = /^#[0-9a-fA-F]{6}$/;
+    var halo = cfg.halo || {};
+    var c1 = HEX.test(halo.c1 || '') ? halo.c1 : '#f88f50';
+    var c3 = HEX.test(halo.c3 || '') ? halo.c3 : '#ddd83d';
+    var blur = parseInt(halo.blur, 10); if (isNaN(blur) || blur < 0) blur = 36; if (blur > 60) blur = 60;
+    var alpha = parseInt(halo.alpha, 10); if (isNaN(alpha) || alpha < 0) alpha = 92; if (alpha > 100) alpha = 100;
+    var hw = parseInt(halo.w, 10); if (isNaN(hw) || hw < 100) hw = 520; if (hw > 1600) hw = 1600;
+    var hh = parseInt(halo.h, 10); if (isNaN(hh) || hh < 100) hh = 640; if (hh > 1600) hh = 1600;
+    var bub = parseInt((cfg.bubble || {}).userAlpha, 10); if (isNaN(bub) || bub < 0) bub = 30; if (bub > 100) bub = 100;
+    function mix(a, b, t) {
+      function ch(h, i) { var v = parseInt(String(h).slice(1 + i * 2, 3 + i * 2), 16); return isNaN(v) ? 0 : v; }
+      var o = '#';
+      for (var i = 0; i < 3; i++) {
+        var v = Math.round(ch(a, i) + (ch(b, i) - ch(a, i)) * t);
+        if (v < 0) v = 0; if (v > 255) v = 255;
+        o += ('0' + v.toString(16)).slice(-2);
+      }
+      return o;
+    }
+    var c2 = (c1 === '#f88f50' && c3 === '#ddd83d') ? '#ecc24f' : mix(c1, c3, 20 / 36);
+    var rs = document.documentElement.style;
+    rs.setProperty('--halo-c1', c1);
+    rs.setProperty('--halo-c2', c2);
+    rs.setProperty('--halo-c3', c3);
+    rs.setProperty('--halo-blur', blur + 'px');
+    rs.setProperty('--halo-alpha', (alpha / 100).toFixed(2));
+    rs.setProperty('--halo-display', halo.on === false ? 'none' : 'block');
+    rs.setProperty('--halo-w', hw + 'px');
+    rs.setProperty('--halo-h', hh + 'px');
+    rs.setProperty('--bubble-user-alpha', (bub / 100).toFixed(2));
+    var img = (cfg.chatBg || {}).image;
+    if (typeof img === 'string' && img) {
+      rs.setProperty('--chat-bg-image', 'url("' + img.replace(/"/g, '%22') + '")');
+    }
+  })();
+  </script>
 </head>
 <body>
 
@@ -18,8 +62,8 @@
   <!-- Chat View -->
   <div class="chat-view" id="chatView">
     <div class="chat-titles" id="chatTitles">
-      <div class="ct-main">日向翔阳</div>
-      <div class="ct-sub"><span class="ct-star">★</span> 与小鱼的小窝 <span class="ct-star">★</span></div>
+      <div class="ct-main" id="ctMain"></div>
+      <div class="ct-sub" id="ctSub"></div>
       <div class="ct-period-reminder" id="ctPeriodReminder"></div>
     </div>
     <div class="chat-header">

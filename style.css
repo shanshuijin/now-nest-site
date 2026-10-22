@@ -1,4 +1,12 @@
 /* ============ Custom Font ============ */
+/* 本地自托管：以前这里是 jsDelivr 上 gh/shanshuijin/hnt 的一条外链。
+   实测（2026-10-23，Edge，本地直开）：外链版本的 FontFace.status 恒为 error、document.fonts.check()=false、
+   渲染宽度与"不存在的字体家族"完全相同（798/798）⇒ 标题一直在用回退字体，「字体总是不加载」就是它。
+   根因：那条 jsDelivr 指向的 GitHub 仓库与当前主仓库不是同一个（主仓库 git remote 为空），链路早已断。
+   改为本地文件后 FontFace.status=loaded、宽度 603≠798 ⇒ 立即生效，也不再依赖任何外部网络。
+   文件与发布仓库、主仓库根 fonts/ 三份逐字节一致（SHA256 0675B5F5AA98A3CC…，3526300 B）。
+   本注释刻意不写三种字面量（外链域名 / 盘符绝对路径 / file 协议前缀）：发布自检 _work/sync-site.mjs
+   会在产物里搜这三个东西，写了就会让发布自检误报 FAIL。 */
 @font-face {
   font-family:'MengJiaoShouXie'; src:url('fonts/MFShuTiaoShaoNian_Noncommercial-Regular.otf') format('opentype');
   font-weight:400; font-style:normal; font-display:swap;
@@ -12,6 +20,9 @@
   --brand-orange: #f88f50; --brand-green: #ddd83d;
   /* 气泡：我方嫩绿磨砂、对方白色磨砂 */
   --bubble-user: rgba(218, 230, 51, 0.3); --bubble-char: rgba(255,255,255,0.72);
+  /* 聊天页我方的气泡底：色与 --bubble-user 相同，只把 alpha 抽成变量供设置页调。
+     碎影页 .sh-row.me 仍用上面的 --bubble-user 本体，不受影响（本次范围只有聊天页）。 */
+  --bubble-user-chat: rgba(218, 230, 51, var(--bubble-user-alpha, 0.3));
   --text-primary: #2f2a22; --text-secondary: #8a857a; --text-muted: #b4b0a6;
   --accent: #F8A050; --accent-hover: #ef8f38; --accent-light: #fff3e6;
   --read-color: #e8923c; --danger: #e8615b; --border: #ecebe4;
@@ -39,22 +50,38 @@ input, textarea, select { font-family:inherit; outline:none; }
 /* ============ 弥散光球：置于气泡之下 ============ */
 .chat-view::before {
   content:''; position:absolute; top:-280px; left:50%; transform:translateX(-50%);
-  width:520px; height:640px; border-radius:50%; pointer-events:none; z-index:0;
+  width:var(--halo-w, 520px); height:var(--halo-h, 640px); border-radius:50%; pointer-events:none; z-index:0;
   background:radial-gradient(circle at 50% 50%,
-    var(--brand-orange) 0%,
-    var(--brand-orange) 18%,
-    #ecc24f 38%,
-    var(--brand-green) 54%,
-    var(--brand-green) 64%,
+    var(--halo-c1, var(--brand-orange)) 0%,
+    var(--halo-c1, var(--brand-orange)) 18%,
+    var(--halo-c2, #ecc24f) 38%,
+    var(--halo-c3, var(--brand-green)) 54%,
+    var(--halo-c3, var(--brand-green)) 64%,
     rgba(221,211,61,0) 100%);
-  filter:blur(36px); opacity:0.92;
+  filter:blur(var(--halo-blur, 36px)); opacity:var(--halo-alpha, 0.92);
+  display:var(--halo-display, block);
 }
+/* 大光晕开关：只隐藏光球本身，::after 淡化不受影响 */
+.chat-view.no-halo::before { display:none; }
 /* 光球向下柔化过渡（置于气泡之下） */
 .chat-view::after {
   content:''; position:absolute; top:260px; left:0; right:0; height:200px; pointer-events:none; z-index:0;
   background:linear-gradient(to bottom, rgba(255,254,241,0) 0%, rgba(255,254,241,0.5) 40%, var(--bg) 85%);
 }
 
+/* 自定义聊天背景：铺在 .chat-view 自身背景上 ⇒ 天然位于 ::before(光晕) 与 ::after(淡化) 之下。
+   图片由 --chat-bg-image 提供（首帧防闪的内联脚本会提前写入，app.js 运行时也会写），
+   这样连「解析到 #chatView 之前」的那一帧也不会露出白底。 */
+.chat-view {
+  background-image:var(--chat-bg-image, none);
+  background-size:cover; background-position:center; background-repeat:no-repeat;
+}
+/* 有背景图时【整条淡化带都不画】。
+   原来这条带子渐变到 var(--bg)，而 .chat-view 自己的底色也是 var(--bg) ⇒ 收边无缝、一直看不见边；
+   换成背景图后，半透明白在带子下边缘（y=460px＝top:260+height:200）凭空消失，就成了一道横向硬边
+   （用户截图实测该线在 y≈457 CSS px，与 460 吻合）。
+   图是用户自己挑的，光晕之外不需要这层白纱 ⇒ 干脆不画。光晕自身的渐变收到 transparent + blur(36px)，下缘本来就是软的。 */
+.chat-view.has-chat-bg::after { display:none; }
 /* ============ 标题区 ============ */
 .chat-titles {
   position:absolute; top:110px; left:0; right:0; z-index:2; pointer-events:none;
@@ -72,6 +99,10 @@ input, textarea, select { font-family:inherit; outline:none; }
   color:#fbfaf5; text-shadow:0 1px 4px rgba(180,150,100,0.25);
   line-height:1.3; display:flex; align-items:center; gap:8px;
 }
+/* 首帧前这两个节点是空的（防闪：静态不写死"日向翔阳/与小鱼的小窝"），
+   :empty 收起以免 line-height 撑出一段空白；app.js 的 renderHeader() 一写入就自然恢复。 */
+.chat-titles .ct-main:empty,
+.chat-titles .ct-sub:empty { display:none; }
 .chat-titles .ct-sub .ct-star { font-size:14px; opacity:0.75; }
 
 /* Period reminder in chat titles */
@@ -136,7 +167,7 @@ input, textarea, select { font-family:inherit; outline:none; }
 }
 /* 我方：嫩绿磨砂玻璃质感 */
 .msg-row.user .msg-bubble {
-  background:var(--bubble-user);
+  background:var(--bubble-user-chat);
   border:1px solid rgba(221,211,61,0.45);
   box-shadow:0 2px 10px rgba(221,211,61,0.18);
   border-bottom-right-radius:var(--radius-sm);

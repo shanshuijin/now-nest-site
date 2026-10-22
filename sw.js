@@ -1,5 +1,76 @@
 /* 今栖 NowNest — Service Worker
  *
+ * v27：大光晕新增「光晕宽(px)」「光晕高(px)」两项可调（style.css / app.js / index.html 均有改动，必须换 CACHE_NAME）。
+ *      背景：光球的 width/height 原本在 style.css 里写死 520px / 640px，用户要求也能调。
+ *      改法：与既有的光晕参数完全同构 —— 新增 --halo-w / --halo-h 两个变量（CSS 里带出厂值兜底 var(--halo-w, 520px)），
+ *        出厂值 520 / 640 写进 HALO_DEFAULT，钳制区间 100–1600 px（超过视口无妨，.chat-view 自己裁）。
+ *        四处同步：设置页两行数字框(#cfgHaloW/#cfgHaloH)、saveSettingsFromForm 的读取与钳制、
+ *        「恢复默认」按钮（现在七值一起复位：配色/模糊/浓淡/宽高）、以及 index.html <head> 的首帧防闪内联脚本
+ *        （v25 定的纪律：首帧与运行时必须写同一批变量，否则一进页面光球会先按 520×640 画一下再跳）。
+ *      未改动：光球位置（top:-280px、水平居中）、圆角、三色渐变、blur、alpha 一律照旧。
+ * v26：修「我的字体总是不加载、总退回初始字体」（style.css 改动，必须换 CACHE_NAME）。
+ *      现象：标题/副标题/日记批注等一直用回退字体（系统黑体），自托管手写体从未生效。
+ *      实测取证（Edge，本地直开，2026-10-23）：@font-face 的 FontFace.status 恒为 error、document.fonts.check()=false、
+ *        且"自定义家族"与"不存在的家族"渲染宽度完全相同（798/798）⇒ 画出来的就是回退字体。
+ *      根因：style.css 的 @font-face 指向 jsDelivr 上 gh/shanshuijin/hnt 的那条外链（…otf）。
+ *        a) 那条链接指向的 GitHub 仓库与当前主仓库不是同一个（主仓库 git remote 为空）⇒ 外链早已失效；
+ *        b) 上一版发布产物虽已本地化（now-nest-site/fonts/），但工作目录 hnt/ 一直挂着这条外链，
+ *           所以直接打开 hnt/index.html 时字体 100% 拿不到。
+ *      修法：字体本地化 —— 新增 hnt/fonts/MFShuTiaoShaoNian_Noncommercial-Regular.otf（与发布仓库、主仓库根 fonts/ 逐字节一致，
+ *        SHA256 0675B5F5AA98A3CC…，3526300 B），style.css 改指 fonts/…。
+ *      实测（同条件复测）：FontFace.status=loaded、宽度 603≠798 ⇒ 生效；本地直开下允许加载本地字体（已用三形态 fixture 验证）。
+ *      注：字体刻意【不】进 APP_SHELL（3.4MB，进了等于让每个访客预下），沿用 fetch 分支的按需 cache.put。
+ *      注2：本文件注释刻意不写三种字面量（外链域名 / 盘符绝对路径 / file 协议前缀）——发布自检 _work/sync-site.mjs
+ *           会在产物里搜这三个东西，写了会让发布自检误报 FAIL。
+ * v25：修「刷新进来时原生梦角名与出厂光晕会顶号一秒」（index.html / style.css / app.js 均有改动，必须换 CACHE_NAME）。
+ *      现象（用户实测截图）：刷新后第一帧显示「日向翔阳 / 与小鱼的小窝」和橙绿出厂光晕，随后才跳成自己的名字与配色。
+ *      根因两条，都是首帧 FOUC（app.js 在 </body> 前才加载）：
+ *        ① 名字是 index.html 里【写死的静态占位】「日向翔阳 / 与小鱼的小窝」，浏览器一能绘制就画出来；
+ *           真实名字要等 app.js 跑到 renderHeader() 才替换。
+ *        ② --halo-* / 背景图 / 气泡 alpha 只在 applyChatVisual() 里写入，首帧 CSS 只能用出厂默认值。
+ *      修法（都不引入第二套逻辑）：
+ *        ① 静态占位留空（<div class="ct-main" id="ctMain"></div>），配 .ct-main:empty{display:none} 以免
+ *           line-height:1.1 撑出一段空白；renderHeader() 一写入就自然恢复。名字不能再提前渲染（它在 app.js 末尾），
+ *           但「留空」消除了闪原生名这件事本身 —— 空不会闪字，闪字的是旧文案。
+ *        ② index.html <head> 加极小内联脚本，在 DOM 解析前同步读 mcard_config 并写 CSS 变量
+ *           （--halo-c1/c2/c3/blur/alpha/display、--bubble-user-alpha、--chat-bg-image）。
+ *           取值规则与 haloCfg()/bubbleCfg()/c2Of() 逐字一致，只是提前执行；运行时仍由 applyChatVisual() 写同一批变量。
+ *           为此新增两个变量：--halo-display（代替 CSS 里那条 .no-halo 分支的首帧表达）与 --chat-bg-image
+ *           （背景图改由 .chat-view 的 background-image:var(...) 提供，首帧即生效；.no-halo/.has-chat-bg 两个类保留为语义标记）。
+ *      双向验证（_work/verify-fouc.mjs，Page.addScriptToEvaluateOnNewDocument 在 rAF 首帧取样）：
+ *        · 有内联脚本：首帧 c1=#ff0000（用户配色）、背景=url(data:image/svg+xml,…)、名字节点为空；
+ *        · 把 localStorage.getItem 置空以模拟改动前：首帧 c1=#f88f50（出厂橙）、背景=none（露白底）⇒ 判据真能红。
+ *      注：背景图此前是 view.style.backgroundImage 内联，现改走变量；探针相应改读计算样式。
+ * v24：接 v23 的两处返工（用户实测反馈；app.js / style.css 均有改动，必须换 CACHE_NAME）。
+ *      ① 【修 bug】加了背景图后聊天页中间有一道横向分界线。根因：光晕底部那条淡化带 .chat-view::after
+ *         （top:260px + height:200px ⇒ 下边缘在 y=460px）本来是渐变到 var(--bg) 的，而 .chat-view 自己
+ *         的底色也是 var(--bg) ⇒ 带子收边无缝、从来看不见边；v23 为「别把图洗白」把它改成收在
+ *         rgba(255,254,241,0.55)，带子一结束下面就是原图，那 55% 的白凭空消失 ⇒ 硬边。
+ *         用户截图实测该线在 y≈457 CSS px（469×1012 预览 ÷ 缩放比 1.2026），与 460 吻合。
+ *         修法：有背景图时整条带子不画（.chat-view.has-chat-bg::after{display:none}）——图是用户自己挑的，
+ *         光晕之外不需要这层白纱；光晕自身的渐变收到 transparent + blur(36px)，下缘本来就是软的。
+ *         像素级双向验证见 _work/verify-chatbg.mjs：把旧 CSS 注回去，探针必须能在 y≈460 抓到 ~70 级跳变。
+ *      ② 新增设置项「我的气泡不透明度(%)」，默认 30（= 改动前 --bubble-user 的 alpha ⇒ 零回归）。
+ *         只作用于【聊天页】.msg-row.user 的气泡：新开 --bubble-user-chat: rgba(218,230,51, var(--bubble-user-alpha,0.3))。
+ *         碎影页 .sh-row.me 仍用 --bubble-user 本体，逐字节未动（用户没要求动碎影，故不越界）。
+ *         颜色留在 CSS，app.js 只存 alpha（cfg.bubble.userAlpha，钳制 0-100）。
+ * v23：新增「聊天背景」与「大光晕」自定义（app.js / style.css 均有改动，必须换 CACHE_NAME）。
+ *      ① 聊天背景：设置页新增「🖼 聊天背景与光晕」分组（插在「聊天设置」之后，成为第 16 个分组），
+ *         可上传自己的图片；复用既有 compressImage：最大边 1600px / JPEG 0.75，结果超 1.2MB 再降一档
+ *         （1200px / 0.7），仍超则拒绝并提示。背景铺在 .chat-view 自身的 background 上 ——
+ *         伪元素永远画在元素自身背景【之上】⇒ 天然位于大光晕下面，无需改层级、无需动 index.html。
+ *      ② 大光晕：三色/模糊/浓淡改为由 --halo-c1 / --halo-c2 / --halo-c3 / --halo-blur / --halo-alpha
+ *         驱动，applyChatVisual() 是唯一应用点，四处调用：开机（init）、保存（saveSettingsFromForm）、
+ *         导入备份（applyImportData）、选图或清除背景。开关只隐藏 ::before 光球，::after 淡化不受影响。
+ *      ③ 零回归：CSS 里每个变量都带【现状默认值】；中间色不进存储，由纯函数 c2Of(c1,c3) 推导 ——
+ *         两色都等于出厂值时精确返回 #ecc24f。实测任何单一混色比例都复现不出它（要命中需 R 0.444 /
+ *         G 0.699 / B 0.053，极差 0.646；50/50 得 #ebb447、按位置加权得 #e9b845，绿通道差 10~14），
+ *         所以必须保留精确出厂分支，否则默认观感会变。
+ *      ④ 配额失败不再谎报成功：既有 saveSettingsFromForm 结尾的 STORE.config=cfg 丢掉了 _write 的布尔返回，
+ *         写失败仍会弹「✅ 设置已保存」。背景图是大对象，故这条链路改走 STORE._write 取布尔：失败就回滚
+ *         内存副本并提示「存储空间不足」，绝不显示已保存。此加固只作用于背景图，未改全局保存行为。
+ *      ⑤ 光晕用自己独立的变量，不动 --brand-orange / --brand-green 本体 ⇒ 改光晕配色不波及按钮、气泡、图标。
+ *      ⑥ 导入备份后立刻 applyChatVisual()，否则「导入后背景不生效」。
  * v22：修设置页窄屏上说明文字/多控件行把行撑破（app.js / style.css 均有改动，必须换 CACHE_NAME）。
  *      现象：设置页有些行的文字冲出屏幕右边被切掉（用户截图，拼音组句那块最明显）。
  *      根因：.setting-row label 的 flex-shrink:0 把长说明钉死在 max-content 宽度上、整行又不折行；
@@ -140,7 +211,7 @@
  *  4. 静态资源与页面都改成"缓存优先 + 后台更新"：打开速度不变，但内容能自愈，
  *     不会像旧版那样把某个 index.html 永久冻在缓存里（发布新版本记得改 CACHE_NAME）。
  */
-const CACHE_NAME = 'now-nest-v22';
+const CACHE_NAME = 'now-nest-v27';
 const APP_SHELL = [
   './',
   './index.html',

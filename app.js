@@ -2458,6 +2458,96 @@ function bindCardManagerEvents(container) {
 }
 
 // ============ Rendering: Settings ============
+// ============ 聊天背景 与 大光晕 ============
+// 出厂值 = 改动前的现状（三色/模糊/浓淡/宽高大）⇒ 未做任何设置时观感逐像素不变。
+var HALO_DEFAULT = { on: true, c1: '#f88f50', c3: '#ddd83d', blur: 36, alpha: 92, w: 520, h: 640 };
+var HALO_MIN_PX = 100;                      // 宽/高下限
+var HALO_MAX_PX = 1600;                     // 宽/高上限（超过视口也无妨，.chat-view 自己裁）
+var CHATBG_MAX_PX = 1600;                   // 首次压缩的最大边
+var CHATBG_RETRY_PX = 1200;                 // 超限后降一档的最大边
+var CHATBG_MAX_BYTES = 1200 * 1024;         // 体积上限 1.2MB
+var _haloMidCache = { c1: '', c3: '', mid: '' };
+// 聊天页我方气泡的不透明度（%）。出厂 30 = 改动前 --bubble-user 的 alpha ⇒ 未调整时观感逐像素不变。
+// 只作用于聊天页 .msg-row.user 的气泡；碎影页 .sh-row.me 仍用 --bubble-user 本体，不在本次范围内。
+var BUBBLE_DEFAULT = { userAlpha: 30 };
+
+// 两色线性混色：逐通道四舍五入到 8 位十六进制
+function mixSrgb(a, b, t) {
+  function ch(h, i) { var v = parseInt(String(h).slice(1 + i * 2, 3 + i * 2), 16); return isNaN(v) ? 0 : v; }
+  var out = '#';
+  for (var i = 0; i < 3; i++) {
+    var v = Math.round(ch(a, i) + (ch(b, i) - ch(a, i)) * t);
+    if (v < 0) v = 0;
+    if (v > 255) v = 255;
+    out += ('0' + v.toString(16)).slice(-2);
+  }
+  return out;
+}
+// 中间色：两色都是出厂值时精确返回出厂中间色 #ecc24f（零回归）；
+// 一旦改动任一端才推导 —— 权重 20/36 来自色标位置（中段 38% 夹在 c1 末 18% 与 c3 起 54% 之间）。
+function c2Of(c1, c3) {
+  if (c1 === HALO_DEFAULT.c1 && c3 === HALO_DEFAULT.c3) return '#ecc24f';
+  if (_haloMidCache.c1 === c1 && _haloMidCache.c3 === c3) return _haloMidCache.mid;
+  var mid = mixSrgb(c1, c3, 20 / 36);
+  _haloMidCache = { c1: c1, c3: c3, mid: mid };
+  return mid;
+}
+// 配置访问器：本段唯一读取 STORE.config.halo 的地方（缺字段一律兜底到出厂值）
+function haloCfg() {
+  var c = (STORE.config || {}).halo || {};
+  var hex = /^#[0-9a-fA-F]{6}$/;
+  var c1 = hex.test(c.c1 || '') ? c.c1 : HALO_DEFAULT.c1;
+  var c3 = hex.test(c.c3 || '') ? c.c3 : HALO_DEFAULT.c3;
+  var blur = parseInt(c.blur, 10); if (isNaN(blur) || blur < 0) blur = HALO_DEFAULT.blur; if (blur > 60) blur = 60;
+  var alpha = parseInt(c.alpha, 10); if (isNaN(alpha) || alpha < 0) alpha = HALO_DEFAULT.alpha; if (alpha > 100) alpha = 100;
+  var w = parseInt(c.w, 10); if (isNaN(w) || w < HALO_MIN_PX) w = HALO_DEFAULT.w; if (w > HALO_MAX_PX) w = HALO_MAX_PX;
+  var h = parseInt(c.h, 10); if (isNaN(h) || h < HALO_MIN_PX) h = HALO_DEFAULT.h; if (h > HALO_MAX_PX) h = HALO_MAX_PX;
+  // 只有显式 false 才算关：老配置没这个键 ⇒ 取默认（开）
+  return { on: c.on === false ? false : true, c1: c1, c3: c3, blur: blur, alpha: alpha, w: w, h: h };
+}
+function chatBgCfg() {
+  var c = (STORE.config || {}).chatBg || {};
+  return { image: typeof c.image === 'string' ? c.image : '' };
+}
+// 我的气泡不透明度（聊天页）
+function bubbleCfg() {
+  var c = (STORE.config || {}).bubble || {};
+  var a = parseInt(c.userAlpha, 10);
+  if (isNaN(a) || a < 0) a = BUBBLE_DEFAULT.userAlpha;
+  if (a > 100) a = 100;
+  return { userAlpha: a };
+}
+// 唯一应用点：把配置落到 DOM（CSS 变量 + 状态类 + 背景图）
+// 注意：index.html <head> 里有一段同步内联脚本做同样的写入（首帧防闪），两边的取值规则必须一致。
+// 这里改用【变量】表达背景图与光晕开关（--chat-bg-image / --halo-display），
+// 于是"首帧"与"运行时"走的是同一条 CSS 路径，不会出现两套逻辑打架。
+function applyChatVisual() {
+  var h = haloCfg();
+  var root = document.documentElement.style;
+  root.setProperty('--bubble-user-alpha', (bubbleCfg().userAlpha / 100).toFixed(2));
+  root.setProperty('--halo-c1', h.c1);
+  root.setProperty('--halo-c2', c2Of(h.c1, h.c3));
+  root.setProperty('--halo-c3', h.c3);
+  root.setProperty('--halo-blur', h.blur + 'px');
+  root.setProperty('--halo-alpha', (h.alpha / 100).toFixed(2));
+  root.setProperty('--halo-display', h.on ? 'block' : 'none');
+  root.setProperty('--halo-w', h.w + 'px');
+  root.setProperty('--halo-h', h.h + 'px');
+  var img = chatBgCfg().image;
+  if (img) root.setProperty('--chat-bg-image', 'url("' + img.replace(/"/g, '%22') + '")');
+  else root.removeProperty('--chat-bg-image');
+  var view = document.getElementById('chatView');
+  if (!view) return;                       // 无 chatView 的页面（如独立工具页）直接跳过
+  // 保留状态类：外部（夹具/旧导出配置）可能按类判断，也便于人肉排查
+  view.classList.toggle('no-halo', !h.on);
+  view.classList.toggle('has-chat-bg', !!img);
+}
+// 背景体积可读化（data URL 长度 × 0.75 ≈ 字节数）
+function chatBgSizeText(dataUrl) {
+  if (!dataUrl) return '未设置';
+  return '已设置 ' + Math.max(1, Math.round(dataUrl.length * 0.75 / 1024)) + 'KB';
+}
+
 function renderSettings(container) {
   const cfg=STORE.config||{};
   const engCfg=cfg.dreamEngine||{};
@@ -2471,6 +2561,9 @@ function renderSettings(container) {
   const shadowConf=shadowCfg();
   const tafConf=taFavCfg();
   const pyConf=pyCfg();
+  const haloConf=haloCfg();
+  const chatBgConf=chatBgCfg();
+  const bubbleConf=bubbleCfg();
 
   container.innerHTML=`
   <div class="settings-body">
@@ -2510,6 +2603,34 @@ function renderSettings(container) {
       <div class="setting-row"><label>聊天带表情概率(%)</label><input type="number" id="cfgChatSticker" value="${(engCfg.prob&&engCfg.prob.dreamChatSticker!=null)?engCfg.prob.dreamChatSticker:10}" min="0" max="100" step="5"></div>
       <div class="setting-row"><label>消息撤回概率(%)</label><input type="number" id="cfgRecallProb" value="${(engCfg.prob&&engCfg.prob.recallProb!=null)?engCfg.prob.recallProb:1}" min="0" max="100" step="0.1"></div>
       <div class="setting-row"><label>内心 OS 概率(%)</label><input type="number" id="cfgOsProb" value="${(cfg.prob&&cfg.prob.os!=null)?cfg.prob.os:10}" min="0" max="100" step="5"><label>0关·100必出</label></div>
+    </div>
+
+    <div class="setting-group sg-fit">
+      <div class="sg-title">🖼 聊天背景与光晕</div>
+      <div class="setting-row">
+        <label>聊天背景</label>
+        <button class="py-wb-btn" id="cfgChatBgPick" style="flex:0 0 auto;">选择图片</button>
+        <button class="py-wb-btn" id="cfgChatBgClear" style="flex:0 0 auto;">清除背景</button>
+        <input type="file" id="cfgChatBgInput" accept="image/*" style="display:none">
+      </div>
+      <div class="setting-row"><label>背景状态</label><span id="cfgChatBgStatus" style="flex:1;font-size:12px;color:var(--text-muted);">${chatBgSizeText(chatBgConf.image)}</span><label class="sg-hint" style="font-size:11px;color:var(--text-muted);">选图后自动压缩、立即生效；背景铺在大光晕下面</label></div>
+      <div class="setting-row">
+        <label>大光晕</label>
+        <input type="checkbox" id="cfgHaloOn" ${haloConf.on?'checked':''} style="width:auto;">
+        <label class="sg-hint" style="font-size:11px;color:var(--text-muted);">关掉只隐藏光球本身；顶部大标题会直接压在背景图上</label>
+      </div>
+      <div class="setting-row">
+        <label>光晕配色</label>
+        <input type="color" id="cfgHaloC1" value="${haloConf.c1}" style="width:44px;height:28px;padding:0;border:1px solid var(--border);border-radius:8px;background:none;">
+        <input type="color" id="cfgHaloC3" value="${haloConf.c3}" style="width:44px;height:28px;padding:0;border:1px solid var(--border);border-radius:8px;background:none;">
+        <button class="py-wb-btn" id="cfgHaloReset" style="flex:0 0 auto;">恢复默认</button>
+      </div>
+      <div class="setting-row" style="font-size:11px;color:var(--text-muted);">左＝起点色，右＝终点色；中间的过渡色由这两色自动推导</div>
+      <div class="setting-row"><label>模糊(px)</label><input type="number" id="cfgHaloBlur" value="${haloConf.blur}" min="0" max="60" step="1"><label class="sg-hint" style="font-size:11px;color:var(--text-muted);">0＝边缘清晰，越大越弥散</label></div>
+      <div class="setting-row"><label>浓淡(%)</label><input type="number" id="cfgHaloAlpha" value="${haloConf.alpha}" min="0" max="100" step="1"><label class="sg-hint" style="font-size:11px;color:var(--text-muted);">0＝完全看不见，100＝最浓</label></div>
+      <div class="setting-row"><label>光晕宽(px)</label><input type="number" id="cfgHaloW" value="${haloConf.w}" min="100" max="1600" step="10"><label class="sg-hint" style="font-size:11px;color:var(--text-muted);">出厂 520；越大光球越宽</label></div>
+      <div class="setting-row"><label>光晕高(px)</label><input type="number" id="cfgHaloH" value="${haloConf.h}" min="100" max="1600" step="10"><label class="sg-hint" style="font-size:11px;color:var(--text-muted);">出厂 640；越大往下铺得越深</label></div>
+      <div class="setting-row"><label>我的气泡不透明度(%)</label><input type="number" id="cfgBubbleUserAlpha" value="${bubbleConf.userAlpha}" min="0" max="100" step="5"><label class="sg-hint" style="font-size:11px;color:var(--text-muted);">0＝全透，100＝完全不透；只作用于聊天页我方的气泡</label></div>
     </div>
 
     <div class="setting-group sg-fit">
@@ -2752,6 +2873,65 @@ function bindSettingsEvents(container) {
   }
   _setupAvatarUpload('avatarPreview', 'charAvInput', 'btnCharAvDel', 'avatarUrl', '🏐');
   _setupAvatarUpload('userAvatarPreview', 'userAvInput', 'btnUserAvDel', 'userAvatarUrl', '🐟');
+  // 聊天背景：选图 → compressImage 压缩 → 直接落盘（取 _write 布尔；失败则回滚并如实提示，绝不谎报已保存）
+  (function _setupChatBg() {
+    var pickBtn = container.querySelector('#cfgChatBgPick');
+    var clrBtn = container.querySelector('#cfgChatBgClear');
+    var input = container.querySelector('#cfgChatBgInput');
+    var statusEl = container.querySelector('#cfgChatBgStatus');
+    function _writeChatBg(dataUrl) {
+      var cfg = STORE.config || {};
+      var prev = (cfg.chatBg && typeof cfg.chatBg.image === 'string') ? cfg.chatBg.image : '';
+      var next = (cfg.chatBg && typeof cfg.chatBg === 'object') ? cfg.chatBg : {};
+      next.image = dataUrl;
+      cfg.chatBg = next;
+      if (!STORE._write('mcard_config', cfg)) {          // 配额满：不沿用 STORE.config=cfg 的静默失败
+        next.image = prev;                                // 回滚内存副本
+        showToast('存储空间不足，背景未保存，可先清理一些带图消息');
+        return false;
+      }
+      applyChatVisual();
+      if (statusEl) statusEl.textContent = chatBgSizeText(dataUrl);
+      return true;
+    }
+    if (pickBtn && input) pickBtn.addEventListener('click', function () { input.click(); });
+    if (clrBtn) clrBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (_writeChatBg('')) showToast('已清除聊天背景');
+    });
+    // 恢复默认：七值一起回出厂（配色 + 模糊 + 浓淡 + 宽高），改完立即落盘并应用
+    var resetBtn = container.querySelector('#cfgHaloReset');
+    if (resetBtn) resetBtn.addEventListener('click', function () {
+      var e1 = container.querySelector('#cfgHaloC1'), e3 = container.querySelector('#cfgHaloC3');
+      var eb = container.querySelector('#cfgHaloBlur'), ea = container.querySelector('#cfgHaloAlpha');
+      var ew = container.querySelector('#cfgHaloW'), eh = container.querySelector('#cfgHaloH');
+      if (e1) e1.value = HALO_DEFAULT.c1;
+      if (e3) e3.value = HALO_DEFAULT.c3;
+      if (eb) eb.value = HALO_DEFAULT.blur;
+      if (ea) ea.value = HALO_DEFAULT.alpha;
+      if (ew) ew.value = HALO_DEFAULT.w;
+      if (eh) eh.value = HALO_DEFAULT.h;
+      scheduleSettingsSave(container, true);      // 程序改 value 不触发 input，得手动保存
+    });
+    if (input) input.addEventListener('change', function () {
+      var file = this.files[0];
+      if (!file) return;
+      var self = this;
+      compressImage(file, CHATBG_MAX_PX, 0.75).then(function (dataUrl) {
+        if (dataUrl.length > CHATBG_MAX_BYTES) {           // 超限：降一档再试一次
+          return compressImage(file, CHATBG_RETRY_PX, 0.7).then(function (smaller) {
+            if (smaller.length > CHATBG_MAX_BYTES) { showToast('图片过大（压缩后仍超 1.2MB），请换一张'); return; }
+            if (_writeChatBg(smaller)) showToast('聊天背景已更新');
+          });
+        }
+        if (_writeChatBg(dataUrl)) showToast('聊天背景已更新');
+      }).catch(function (err) {
+        console.error('聊天背景压缩失败:', err);
+        showToast('背景图片读取失败，请重试');
+      });
+      self.value = '';
+    });
+  })();
   container.querySelectorAll('input:not([type="file"]):not([type="checkbox"]), textarea').forEach(inp=>inp.addEventListener('input', () => scheduleSettingsSave(container, false)));
   container.querySelectorAll('input[type="checkbox"], select').forEach(inp=>inp.addEventListener('change', () => scheduleSettingsSave(container, true)));
   container.querySelectorAll('.prob-msg,.prob-card').forEach(inp=>inp.addEventListener('input',()=>updateProbSums(container)));
@@ -3195,8 +3375,38 @@ function saveSettingsFromForm(container) {
     }
   }
 
+  // 聊天背景与大光晕
+  const haloOnEl = container.querySelector('#cfgHaloOn');
+  const haloC1El = container.querySelector('#cfgHaloC1');
+  const haloC3El = container.querySelector('#cfgHaloC3');
+  const haloBlurEl = container.querySelector('#cfgHaloBlur');
+  const haloAlphaEl = container.querySelector('#cfgHaloAlpha');
+  const haloWEl = container.querySelector('#cfgHaloW');
+  const haloHEl = container.querySelector('#cfgHaloH');
+  if (haloOnEl || haloC1El || haloC3El || haloBlurEl || haloAlphaEl || haloWEl || haloHEl) {
+    if (!cfg.halo) cfg.halo = {};
+    const _hHex = /^#[0-9a-fA-F]{6}$/;
+    if (haloOnEl) cfg.halo.on = !!haloOnEl.checked;
+    if (haloC1El && _hHex.test(haloC1El.value)) cfg.halo.c1 = haloC1El.value.toLowerCase();
+    if (haloC3El && _hHex.test(haloC3El.value)) cfg.halo.c3 = haloC3El.value.toLowerCase();
+    if (haloBlurEl) { var hB = parseInt(haloBlurEl.value, 10); if (isNaN(hB) || hB < 0) hB = HALO_DEFAULT.blur; if (hB > 60) hB = 60; cfg.halo.blur = hB; }
+    if (haloAlphaEl) { var hA = parseInt(haloAlphaEl.value, 10); if (isNaN(hA) || hA < 0) hA = HALO_DEFAULT.alpha; if (hA > 100) hA = 100; cfg.halo.alpha = hA; }
+    if (haloWEl) { var hW = parseInt(haloWEl.value, 10); if (isNaN(hW) || hW < HALO_MIN_PX) hW = HALO_DEFAULT.w; if (hW > HALO_MAX_PX) hW = HALO_MAX_PX; cfg.halo.w = hW; }
+    if (haloHEl) { var hH = parseInt(haloHEl.value, 10); if (isNaN(hH) || hH < HALO_MIN_PX) hH = HALO_DEFAULT.h; if (hH > HALO_MAX_PX) hH = HALO_MAX_PX; cfg.halo.h = hH; }
+  }
+  // 我的气泡不透明度（%）：颜色留在 CSS，这里只存 alpha
+  const bubbleAlphaEl = container.querySelector('#cfgBubbleUserAlpha');
+  if (bubbleAlphaEl) {
+    if (!cfg.bubble) cfg.bubble = {};
+    var bA = parseInt(bubbleAlphaEl.value, 10);
+    if (isNaN(bA) || bA < 0) bA = BUBBLE_DEFAULT.userAlpha;
+    if (bA > 100) bA = 100;
+    cfg.bubble.userAlpha = bA;
+  }
+
   cfg.dreamEngine = engCfg;
   STORE.config=cfg;
+  applyChatVisual();
   renderHeader();
   scheduleSettingsEngineRefresh();
   showToast('✅ 设置已保存');
@@ -6948,6 +7158,7 @@ function applyImportData(text) {
     if (data.subcategories) STORE.subcategories = data.subcategories;
     if (data.cards) STORE.cards = data.cards;
     if (data.config) STORE.config = data.config;
+    applyChatVisual();   // 导入备份后立刻套用背景/光晕（不补这行，「导入后背景不生效」就是 bug）
     if (data.messages) STORE.messages = data.messages;
     if (data.moments) STORE.moments = data.moments;
     if (data.likedMoments) STORE.likedMoments = data.likedMoments;
@@ -7729,6 +7940,7 @@ async function init() {
   try {
     bindViewportEvents();
     bindEvents();
+    applyChatVisual();
     renderHeader(); renderMessages();
     updateRedDots();
     // 网易云歌单缓存：为空或过期(24h)时静默拉取
